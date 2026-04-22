@@ -1,38 +1,28 @@
 #!/usr/bin/env python3
-"""
-log-parser - Security Log Parser & SIEM Integration Toolkit
-Parses Apache, Nginx, SSH, and Windows Event logs for threats
-"""
+"""log-parser - Security Log Parser & SIEM Integration Toolkit"""
 import argparse
-from modules.apache_parser import ApacheParser
-from modules.ssh_parser import SSHParser
-from modules.threat_detector import ThreatDetector
-from modules.report import LogReport
+from modules.parser import LogParser
+from modules.analyzer import ThreatAnalyzer
+from modules.report import Report
 
 def main():
     parser = argparse.ArgumentParser(description="Security Log Parser")
     parser.add_argument("logfile", help="Path to log file")
-    parser.add_argument("--type", choices=["apache", "nginx", "ssh", "auto"], default="auto")
+    parser.add_argument("--format", choices=["apache", "nginx", "syslog", "auth"], default="apache")
     parser.add_argument("--output", default="log_report.html")
     args = parser.parse_args()
 
-    print(f"[*] Parsing log file: {args.logfile}")
+    print(f"[*] Parsing {args.format} logs: {args.logfile}")
+    lp = LogParser(args.logfile, args.format)
+    entries = lp.parse()
+    print(f"[+] Parsed {len(entries)} entries")
 
-    if args.type in ["apache", "nginx", "auto"]:
-        p = ApacheParser(args.logfile)
-        entries = p.parse()
-    elif args.type == "ssh":
-        p = SSHParser(args.logfile)
-        entries = p.parse()
-    else:
-        entries = []
+    analyzer = ThreatAnalyzer(entries)
+    threats = analyzer.analyze()
+    print(f"[!] Found {len(threats)} threat indicators")
 
-    detector = ThreatDetector(entries)
-    threats = detector.analyze()
-
-    report = LogReport(args.logfile, entries, threats)
-    report.save(args.output)
-    print(f"[+] Found {len(threats)} threats. Report: {args.output}")
+    Report(args.logfile, entries, threats).save(args.output)
+    print(f"[+] Report: {args.output}")
 
 if __name__ == "__main__":
     main()
