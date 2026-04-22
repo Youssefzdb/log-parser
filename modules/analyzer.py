@@ -1,44 +1,38 @@
 #!/usr/bin/env python3
-"""Threat Analyzer Module"""
+"""Threat Analyzer - Detect brute force, scanners, anomalies"""
 from collections import Counter
 
-SUSPICIOUS_PATHS = ["/admin", "/wp-login", "/phpmyadmin", "/.env", "/etc/passwd", "/cmd", "/shell"]
-SUSPICIOUS_AGENTS = ["sqlmap", "nikto", "nmap", "masscan", "zgrab"]
+SUSPICIOUS_PATHS = ["/admin", "/wp-login", "/.env", "/phpmyadmin", "/etc/passwd", "/../", "/shell", "/cmd"]
+SCANNER_UAS = ["sqlmap", "nikto", "nmap", "masscan", "zgrab", "dirbuster"]
 
 class ThreatAnalyzer:
-    def __init__(self, entries, threshold=10):
+    def __init__(self, entries):
         self.entries = entries
-        self.threshold = threshold
         self.threats = []
 
-    def analyze(self):
-        ip_counter = Counter()
-        
-        for entry in self.entries:
-            ip = entry.get("ip", "")
-            path = entry.get("path", "")
-            status = entry.get("status", "")
-            
-            ip_counter[ip] += 1
-            
-            # Detect path traversal
-            if "../" in path or "/etc/passwd" in path:
-                self.threats.append({"type": "Path Traversal", "ip": ip, "path": path})
-            
-            # Detect suspicious paths
-            for sp in SUSPICIOUS_PATHS:
-                if sp in path:
-                    self.threats.append({"type": "Suspicious Access", "ip": ip, "path": path})
+    def _detect_brute_force(self):
+        ip_counts = Counter(e.get("ip","") for e in self.entries if e.get("status","") in ["401","403"])
+        for ip, count in ip_counts.items():
+            if count > 10:
+                self.threats.append({"type": "Brute Force", "ip": ip, "count": count, "severity": "HIGH"})
+                print(f"[!] Brute force: {ip} ({count} attempts)")
+
+    def _detect_scanners(self):
+        for e in self.entries:
+            path = e.get("path", "").lower()
+            for sus in SUSPICIOUS_PATHS:
+                if sus in path:
+                    self.threats.append({"type": "Path Scan", "ip": e.get("ip",""), "path": path, "severity": "MEDIUM"})
                     break
-            
-            # Detect brute force (401/403 storms)
-            if status in ["401", "403"]:
-                ip_counter[f"auth_fail_{ip}"] += 1
 
-        # Flag IPs exceeding threshold
-        for ip, count in ip_counter.items():
-            if not ip.startswith("auth_fail_") and count > self.threshold:
-                self.threats.append({"type": "High Request Rate", "ip": ip, "count": count})
+    def _detect_errors(self):
+        error_ips = Counter(e.get("ip","") for e in self.entries if e.get("status","").startswith("5"))
+        for ip, count in error_ips.items():
+            if count > 20:
+                self.threats.append({"type": "High Error Rate", "ip": ip, "count": count, "severity": "MEDIUM"})
 
-        print(f"[+] Detected {len(self.threats)} threat indicators")
+    def analyze(self):
+        self._detect_brute_force()
+        self._detect_scanners()
+        self._detect_errors()
         return self.threats
